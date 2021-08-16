@@ -30,17 +30,22 @@ class Step():
     def __repr__(self):
         return f"Step({str(self)})"
 
+class ScriptFile():
+    def __init__(self, input_file):
+        self.buffer = ''
+        for line in input_file.readlines():
+            line=line.strip()
+            if not line.startswith('#'):
+                self.buffer += ' ' + line
+
+    def __str__(self):
+        return self.buffer
+        
 class Script():
-    def __init__(self, input_file=None, input_string=None):
+    def __init__(self, input_string=None):
         self.steps = []
-        if input_file:
-            input_string = ''
-            for line in input_file.readlines():
-                line=line.strip()
-                if not line.startswith('#'):
-                    input_string += ' ' + line
-        elif not input_string:
-            raise ParameterError('Either input_file or trigger must be provided.')
+        if not input:
+            raise ParameterError('Missing required script string')
 
         tokens = list(shlex.shlex(input_string, posix=True))
         if len(tokens) & 1: 
@@ -63,41 +68,57 @@ class Script():
         else:
             raise StopIteration
 
-def fail(error):
-    click.echo(f"Error: {error}", err=True)
-    raise click.Abort()
-
 class Handler():
-    def __init__(self, *, address, port, script_file, script_string, echo, timeout):
-        self.script = Script(script_file, script_string)
-        self.address = address
-        self.port = port
-        self.echo = echo
+    def __init__(self, command, script, timeout, output_function, log_file):
+        self.command = command
+        self.script = Script(script)
         self.timeout = timeout
+        self.outfunc = output_function 
+        self.log = log_file
 
     def __enter__(self):
-
-        if self.echo:
-            logfile = sys.stdout
-        else:
-            logfile = None
-
-        # self.child = fdpexpect.fdspawn(self.socket, encoding='utf-8', timeout=self.timeout, logfile=logfile)
-        command = f'socat stdio tcp4-connect:{self.address}:{self.port}' 
-        self.child = spawn(command, encoding='utf-8', timeout=self.timeout, logfile=logfile)
-
+        self.output('Connecting...')
+        self.child = spawn(self.command, encoding='utf-8', timeout=self.timeout, logfile=self.log)
+        self.output('Connected.')
         return self
 
     def __exit__(self, _, exception, traceback):
+        if self.child.isalive():
+            self.child.terminate()
+        self.output('Terminated.')
         return False
 
+    def output(self, message):
+        if self.outfunc:
+            self.outfunc(message)
+
     def send(self, data):
-        return self.child.sendline(data)
+        if data:
+            self.output(f"Sending '{data}'")
+            self.child.sendline(data)
 
     def expect(self, data):
-        return self.child.expect(data)
+        if data:
+            self.output(f"Waiting for '{data}'...")
+            self.child.expect(data)
+            self.output(f"Received '{data}'.")
+
+def click_output(message):
+    click.echo(message, err=True)
+
+class NetChat():
+    def __init__(self, *, address, port, script, timeout=None, output_function=None, log_file=None):
+        command = f'socat stdio tcp4-connect:{address}:{port}' 
+        self.handler = Handler(command, script, timeout, output_function, log_file)
+
+    def run(self):
+        with self.handler as h:
+            for step in h.script:
+                h.expect(step.expect)
+                h.send(step.send)
 
 @click.command(name='netchat')
+@click.version_option()
 @click.argument('address', type=str)
 @click.argument('port', type=int)
 @click.argument('script', type=str, required=False, default=None)
@@ -121,18 +142,21 @@ def netchat(address, port, script, file, timeout, verbose, echo, debug):
 
     sys.excepthook = exception_handler
 
-    with Handler(address=address, port=port, script_file=file, script_string=script, echo=echo, timeout=timeout) as handler:
-        for step in handler.script:
-            if step.expect:
-                if verbose:
-                    click.echo(f"Waiting for '{step.expect}'...", nl=False, err=True)
-                handler.expect(step.expect)
-            if step.send:
-                if verbose:
-                    click.echo(f"Sending '{step.send}'", err=True)
-                handler.send(step.send)
+    if file:
+        script = str(ScriptFile(file))
+
     if verbose:
-        click.echo("Terminated", err=True)
+        output = click_output
+    else:
+        output = None
+
+    if echo:
+        log = sys.stdout
+    else:
+        log = None
+
+    NetChat(address=address, port=port, script=script, timeout=timeout, output_function=output, log_file=log).run()
+
 
 if __name__=='__main__':
     netchat()
