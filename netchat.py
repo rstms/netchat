@@ -4,7 +4,9 @@ import click
 import socket
 import sys
 import time
+import shlex
 from pathlib import Path
+import pexpect
 
 DEFAULT_TIMEOUT=10
 
@@ -15,19 +17,36 @@ class ParameterError(Exception):
     pass
 
 class Step():
-    def __init__(self, line):
-        line = line.strip()
-        if line:
-            self.send, self.expect = line.split(',')[0:2]
+    def __init__(self, expect, send):
+        self.expect=expect
+        self.send=send
+
+    def __str__(self):
+        return repr(dict(expect=self.expect,send=self.send))
+
+    def __repr__(self):
+        return f"Step({str(self)})"
 
 class Script():
-    def __init__(self, input_file=None, trigger=None):
+    def __init__(self, input_file=None, input_string=None):
+        self.steps = []
         if input_file:
-            self.steps = [Step(line) for line in input_file.readlines() if (line.strip() and not line.startswith('#'))]
-        elif trigger:
-            self.steps = [Step(f",{trigger}")]
-        else:
+            input_string = ''
+            for line in input_file.readlines():
+                line=line.strip()
+                if not line.startswith('#'):
+                    input_string += ' ' + line
+        elif not input_string:
             raise ParameterError('Either input_file or trigger must be provided.')
+
+        tokens = list(shlex.shlex(input_string, posix=True))
+        if len(tokens) & 1: 
+            tokens.append('')
+        tokens.reverse()
+        while len(tokens):
+            send = tokens.pop()
+            expect = tokens.pop()
+            self.steps.append(Step(send, expect))
 
     def __iter__(self):
         self.index = 0
@@ -46,56 +65,62 @@ def fail(error):
     raise click.Abort()
 
 class Handler():
-    def __init__(self, address, port, script_file=None, trigger=None):
+    def __init__(self, *, address, port, script_file=None, script_string=None, echo=False):
         self.address = address
         self.port = port
-        self.script = Script(script_file, trigger)
+        self.script = Script(script_file, script_string)
+        self.echo = echo
 
     def __enter__(self):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_address = (self.address, self.port)
-        click.echo(f"Connecting to {server_address}...", err=True, nl=False)
-        self.sock.connect(server_address)
-        click.echo("<connected>", err=True)
+        self.child = pexpect.spawn(f'socat stdio tcp4-connect:{self.address}:{self.port}')
+        if self.echo:
+            self.child.logfile_read = sys.stdout
         return self
 
     def __exit__(self, _, exc, tb):
-        self.sock.close()
-        click.echo("\n<closed>", err=True)
+        if self.child.isalive():
+            self.child.terminate(force=True)
         return False
 
-    def getline(self, timeout):
-        rxbuf = ''
-        while(rxbuf[-1:] != '\n'):
-            rxbuf+=self.sock.recv(1).decode()
-            if timeout and (time.time() > timeout):
-                fail('Timeout')
-        rxbuf=rxbuf.strip()
-        click.echo(f"--RX-->'{rxbuf}'", err=True)
-        return rxbuf
+    def send(self, data):
+        return self.child.sendline(data)
 
-    def putline(self, txbuf):
-        click.echo(f"<-TX--'{txbuf}'", err=True, nl=False)
-        if txbuf:
-            self.sock.sendall((txbuf+'\n').encode())
+    def expect(self, data):
+        return self.child.expect(data)
 
 @click.command(name='netchat')
 @click.argument('address', type=str)
 @click.argument('port', type=int)
-@click.option('-s', '--script', type=click.File('r'))
-@click.option('-t', '--trigger', type=str)
-@click.option('-T', '--timeout', type=int, default=DEFAULT_TIMEOUT)
-def netchat(address, port, script, trigger, timeout):
+@click.argument('script', type=str, required=False, default=None)
+@click.option('-f', '--file', type=click.File('r'))
+@click.option('-t', '--timeout', type=int, default=DEFAULT_TIMEOUT)
+@click.option('-v', '--verbose', is_flag=True)
+@click.option('-e', '--echo', is_flag=True)
+@click.option('-d', '--debug', is_flag=True)
+def netchat(address, port, script, file, timeout, verbose, echo, debug):
+
+    def exception_handler(exception_type, exception, traceback, debug_hook=sys.excepthook):
+        if debug:
+            debug_hook(exception_type, exception, traceback)
+        else:
+            click.echo(f"{exception_type.__name__}: {exception}")
+            sys.exit(0)
+    sys.excepthook = exception_handler
+
     if timeout:
         timeout+=time.time()
-    with Handler(address, port, script, trigger) as handler:
+    with Handler(address=address, port=port, script_file=file, script_string=script, echo=echo) as handler:
         for step in handler.script:
-            handler.putline(step.send)
             if step.expect:
-                click.echo(f"  Expecting '{step.expect}'", err=True)
-                while not handler.getline(timeout).startswith(step.expect): 
-                    pass
-            click.echo('OK', err=True)
+                if verbose:
+                    click.echo(f"Waiting for '{step.expect}'...", nl=False, err=True)
+                handler.expect(step.expect)
+            if step.send:
+                if verbose:
+                    click.echo(f"Sending '{step.send}'", err=True)
+                handler.send(step.send)
+    if verbose:
+        click.echo("Terminated", err=True)
 
 if __name__=='__main__':
     netchat()
