@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 
 import click
+import io
+import os
+import shlex
 import socket
 import sys
 import time
-import shlex
+
 from pathlib import Path
-import pexpect
+from pexpect import spawn, fdpexpect
 
 DEFAULT_TIMEOUT=10
 
@@ -65,21 +68,27 @@ def fail(error):
     raise click.Abort()
 
 class Handler():
-    def __init__(self, *, address, port, script_file=None, script_string=None, echo=False):
+    def __init__(self, *, address, port, script_file, script_string, echo, timeout):
+        self.script = Script(script_file, script_string)
         self.address = address
         self.port = port
-        self.script = Script(script_file, script_string)
         self.echo = echo
+        self.timeout = timeout
 
     def __enter__(self):
-        self.child = pexpect.spawn(f'socat stdio tcp4-connect:{self.address}:{self.port}')
+
         if self.echo:
-            self.child.logfile_read = sys.stdout
+            logfile = sys.stdout
+        else:
+            logfile = None
+
+        # self.child = fdpexpect.fdspawn(self.socket, encoding='utf-8', timeout=self.timeout, logfile=logfile)
+        command = f'socat stdio tcp4-connect:{self.address}:{self.port}' 
+        self.child = spawn(command, encoding='utf-8', timeout=self.timeout, logfile=logfile)
+
         return self
 
-    def __exit__(self, _, exc, tb):
-        if self.child.isalive():
-            self.child.terminate(force=True)
+    def __exit__(self, _, exception, traceback):
         return False
 
     def send(self, data):
@@ -93,7 +102,7 @@ class Handler():
 @click.argument('port', type=int)
 @click.argument('script', type=str, required=False, default=None)
 @click.option('-f', '--file', type=click.File('r'))
-@click.option('-t', '--timeout', type=int, default=DEFAULT_TIMEOUT)
+@click.option('-t', '--timeout', type=int, default=None)
 @click.option('-v', '--verbose', is_flag=True)
 @click.option('-e', '--echo', is_flag=True)
 @click.option('-d', '--debug', is_flag=True)
@@ -103,13 +112,16 @@ def netchat(address, port, script, file, timeout, verbose, echo, debug):
         if debug:
             debug_hook(exception_type, exception, traceback)
         else:
-            click.echo(f"{exception_type.__name__}: {exception}")
-            sys.exit(0)
+            if verbose:
+                message = str(exception)
+            else:
+                message = str(exception).split('\n')[0]
+            click.echo(f"{exception_type}.{message}", err=True)
+            sys.exit(-1)
+
     sys.excepthook = exception_handler
 
-    if timeout:
-        timeout+=time.time()
-    with Handler(address=address, port=port, script_file=file, script_string=script, echo=echo) as handler:
+    with Handler(address=address, port=port, script_file=file, script_string=script, echo=echo, timeout=timeout) as handler:
         for step in handler.script:
             if step.expect:
                 if verbose:
@@ -124,3 +136,4 @@ def netchat(address, port, script, file, timeout, verbose, echo, debug):
 
 if __name__=='__main__':
     netchat()
+
