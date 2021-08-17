@@ -37,10 +37,10 @@ test:
 	pytest tests/test_*.py
 
 define bump
-bumpversion $1;
-dotenv set VERSION $$(cat VERSION);
-sed -e "s/\(__version__\).*$$/\\1='$$VERSION'/" -i ${PROJECT}/__init__.py
+  bumpversion $1;
 endef
+#dotenv set VERSION $$(cat VERSION);
+#sed -e "s/\(__version__\).*$$/\\1='$$VERSION'/" -i ${PROJECT}/__init__.py
 
 bump-patch:
 	$(call bump,patch)
