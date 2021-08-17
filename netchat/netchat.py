@@ -9,7 +9,7 @@ import sys
 import time
 
 from pathlib import Path
-from pexpect import spawn, fdpexpect
+import pexpect
 
 DEFAULT_TIMEOUT = 10
 
@@ -88,7 +88,7 @@ class Handler():
 
     def __enter__(self):
         self.output('Connecting...')
-        self.child = spawn(self.command, encoding='utf-8', timeout=self.timeout, logfile=self.log)
+        self.child = pexpect.spawn(self.command, encoding='utf-8', timeout=self.timeout, logfile=self.log)
         self.output('Connected.')
         return self
 
@@ -127,8 +127,13 @@ class NetChat():
     def run(self):
         with self.handler as h:
             for step in h.script:
-                h.expect(step.expect)
-                h.send(step.send)
+                try:
+                    h.expect(step.expect)
+                except pexpect.exceptions.EOF as ex:
+                    h.output('EOF')
+                    break
+                else:
+                    h.send(step.send)
 
 
 @click.command(name='netchat')

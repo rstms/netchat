@@ -34,7 +34,16 @@ clean:
 
 TESTS=$(wildcard tests/test_*.py)
 test:
-	pytest tests/test_*.py
+	pytest $$(dotenv get PYTEST_OPTIONS) tests/test_*.py
+
+test-full-trace:
+	dotenv set -- PYTEST_OPTIONS '--full-trace'
+	${MAKE} test
+
+test-debug:
+	dotenv set -- PYTEST_OPTIONS '--pdb'
+	${MAKE} test
+
 
 define bump
   bumpversion $1;
