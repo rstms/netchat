@@ -61,7 +61,7 @@ fmt: .fmt
 	@touch $@
 
 gitclean:
-	$(if $(shell git status --porcelain), $(error "git status dirty, commit and push first"))
+	$(if $(shell git status --porcelain),$(error "git status dirty, commit and push first"))
 
 # test with tox if sources have changed
 .PHONY: tox
