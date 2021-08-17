@@ -1,0 +1,9 @@
+#!/bin/bash
+(pip install $1==fnord.xyzzy.plough.plover)2>&1 |\
+  tr ')' '(' |\
+  awk -F\( '{print $2}' |\
+  awk -F: '{print $2}' |\
+  tr ',' '\n' |\
+  awk 'NF'|\
+  tail -1 |\
+  tr -d ' '
