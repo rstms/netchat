@@ -3,7 +3,9 @@ import subprocess
 import logging
 from time import time
 
+
 class Server():
+
     def __init__(self, port=2000, count=300, delay=1):
         logging.info(f'{self} init')
         self.port = port
@@ -14,8 +16,11 @@ class Server():
         self.stdout = ''
         self.stderr = ''
         self.command = [
-            'socat', 
-            '-d', '-d', '-d', '-v',
+            'socat',
+            '-d',
+            '-d',
+            '-d',
+            '-v',
             f'tcp4-listen:{port},reuseaddr,fork',
             f"system:'for s in $(seq {count}); do fortune -a; sleep {delay}; done'",
         ]
@@ -24,11 +29,7 @@ class Server():
         logging.info(f'{self} enter')
         self.started = time()
         self.process = subprocess.Popen(
-                self.command,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
+            self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
         return self
 
@@ -57,7 +58,7 @@ class Server():
         self.ret = self.process.poll()
         if not self.ret:
             self.process.terminate()
-            self.ret = self.process.wait(timeout) 
+            self.ret = self.process.wait(timeout)
         if not self.stopped:
             self.stopped = time()
 
@@ -79,6 +80,7 @@ class Server():
         else:
             end = time()
         return end - self.started
+
 
 @pytest.fixture(scope='session')
 def server():

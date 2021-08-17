@@ -8,23 +8,28 @@ from pathlib import Path
 
 from netchat import NetChat
 
+
 def p(label, msg):
     pp({label: msg})
+
 
 def test_init():
     nc = NetChat(address='localhost', port='2222', script='howdy')
     assert nc
+
 
 def test_wait_quiet(server):
     # connect and wait for 'the'
     nc = NetChat(address='localhost', port=server.port, script='the')
     ret = nc.run()
 
+
 def test_wait_output(server):
     # connect and wait for 'the'
     # catch diagnostic output
 
-    buf=[]
+    buf = []
+
     def outfunc(message):
         logging.info(message)
         buf.append(message)
@@ -34,12 +39,14 @@ def test_wait_output(server):
     assert len(buf), 'expected diagnostic output'
     p('output', buf)
 
+
 def test_wait_output_and_file(server):
     # connect and wait for 'the'
     # catch diagnostic output
     # catch server output
 
-    buf=[]
+    buf = []
+
     def outfunc(message):
         logging.info(message)
         buf.append(message)
@@ -70,7 +77,8 @@ def test_send_and_receive_script(server):
     # catch diagnostic output
     # catch server output
 
-    buf=[]
+    buf = []
+
     def outfunc(message):
         logging.info(message)
         buf.append(message)
@@ -96,7 +104,3 @@ def test_send_and_receive_script(server):
 
     p('server_stdout', server.stdout)
     p('server_stderr', server.stderr)
-
-
-
-
