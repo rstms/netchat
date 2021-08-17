@@ -1,0 +1,2 @@
+#!/bin/bash
+while true; do socat -v -x tcp4-listen:2000,reuseaddr stdio; sleep 3; done

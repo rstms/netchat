@@ -11,44 +11,52 @@ import time
 from pathlib import Path
 from pexpect import spawn, fdpexpect
 
-DEFAULT_TIMEOUT=10
+DEFAULT_TIMEOUT = 10
+
 
 class TimeoutError(Exception):
     pass
 
+
 class ParameterError(Exception):
     pass
 
+
 class Step():
+
     def __init__(self, expect, send):
-        self.expect=expect
-        self.send=send
+        self.expect = expect
+        self.send = send
 
     def __str__(self):
-        return repr(dict(expect=self.expect,send=self.send))
+        return repr(dict(expect=self.expect, send=self.send))
 
     def __repr__(self):
         return f"Step({str(self)})"
 
+
 class ScriptFile():
+
     def __init__(self, input_file):
         self.buffer = ''
         for line in input_file.readlines():
-            line=line.strip()
+            line = line.strip()
             if not line.startswith('#'):
                 self.buffer += ' ' + line
 
     def __str__(self):
         return self.buffer
-        
+
+
 class Script():
+
     def __init__(self, input_string=None):
         self.steps = []
         if not input:
             raise ParameterError('Missing required script string')
 
         tokens = list(shlex.shlex(input_string, posix=True))
-        if len(tokens) & 1: 
+        if len(tokens) & 1:
             tokens.append('')
         tokens.reverse()
         while len(tokens):
@@ -58,7 +66,7 @@ class Script():
 
     def __iter__(self):
         self.index = 0
-        return self 
+        return self
 
     def __next__(self):
         if self.index < len(self.steps):
@@ -68,12 +76,14 @@ class Script():
         else:
             raise StopIteration
 
+
 class Handler():
+
     def __init__(self, command, script, timeout, output_function, log_file):
         self.command = command
         self.script = Script(script)
         self.timeout = timeout
-        self.outfunc = output_function 
+        self.outfunc = output_function
         self.log = log_file
 
     def __enter__(self):
@@ -103,12 +113,15 @@ class Handler():
             self.child.expect(data)
             self.output(f"Received '{data}'.")
 
+
 def click_output(message):
     click.echo(message, err=True)
 
+
 class NetChat():
+
     def __init__(self, *, address, port, script, timeout=None, output_function=None, log_file=None):
-        command = f'socat stdio tcp4-connect:{address}:{port}' 
+        command = f'socat stdio tcp4-connect:{address}:{port}'
         self.handler = Handler(command, script, timeout, output_function, log_file)
 
     def run(self):
@@ -116,6 +129,7 @@ class NetChat():
             for step in h.script:
                 h.expect(step.expect)
                 h.send(step.send)
+
 
 @click.command(name='netchat')
 @click.version_option()
@@ -158,6 +172,5 @@ def netchat(address, port, script, file, timeout, verbose, echo, debug):
     NetChat(address=address, port=port, script=script, timeout=timeout, output_function=output, log_file=log).run()
 
 
-if __name__=='__main__':
+if __name__ == '__main__':
     netchat()
-
