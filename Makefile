@@ -39,7 +39,7 @@ test:
 define bump
 bumpversion $1;
 dotenv set VERSION $$(cat VERSION);
-sed -e "s/\(__version__\).*$/\\1='$VERSION'/" -i ${PROJECT}/__init__.py
+sed -e "s/\(__version__\).*$/\\1='$$VERSION'/" -i ${PROJECT}/__init__.py
 endef
 
 bump-patch:
