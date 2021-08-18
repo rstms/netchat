@@ -6,7 +6,7 @@ import logging
 from pprint import pprint as pp
 from pathlib import Path
 
-from netchat import NetChat
+from netchat import Session
 
 
 def p(label, msg):
@@ -14,53 +14,42 @@ def p(label, msg):
 
 
 def test_init():
-    nc = NetChat(address='localhost', port='2222', script='howdy')
+    nc = Session(('localhost', 2222), script='howdy')
     assert nc
 
 
 def test_wait_quiet(server):
     # connect and wait for 'the'
-    nc = NetChat(address='localhost', port=server.port, script='the')
+    nc = Session(('localhost', server.port), script='the', out=None, err=None)
     ret = nc.run()
 
 
-def test_wait_output(server):
+def test_wait_output(server, callback):
     # connect and wait for 'the'
     # catch diagnostic output
 
-    buf = []
+    nc = Session(('localhost', server.port), script='the', out=None, err=None)
 
-    def outfunc(message):
-        logging.info(message)
-        buf.append(message)
-
-    nc = NetChat(address='localhost', port=server.port, script='the', output_function=outfunc)
-    ret = nc.run()
-    assert len(buf), 'expected diagnostic output'
-    p('output', buf)
+    ret = nc.run(callback.rx)
+    assert len(callback.buffer), 'expected diagnostic output'
+    p('output', callback.buffer)
 
 
-def test_wait_output_and_file(server):
+def test_wait_output_and_file(server, callback):
     # connect and wait for 'the'
     # catch diagnostic output
     # catch server output
 
-    buf = []
-
-    def outfunc(message):
-        logging.info(message)
-        buf.append(message)
-
     writer = Path('/tmp') / 'log_text'
     with writer.open('w') as ofp:
-        nc = NetChat(address='localhost', port=server.port, script='the', output_function=outfunc, log_file=ofp)
-        ret = nc.run()
+        nc = Session(('localhost', server.port), script='the', out=ofp, err=None)
+        ret = nc.run(callback.rx)
 
     p('running', server.running())
     p('elapsed', server.elapsed())
 
-    assert len(buf), 'diagnostic output should be present'
-    p('output', buf)
+    assert len(callback.buffer), 'diagnostic output should be present'
+    p('output', callback.buffer)
 
     reader = Path('/tmp') / 'log_text'
     log_text = reader.read_text()
@@ -72,29 +61,23 @@ def test_wait_output_and_file(server):
     p('server_stderr', server.stderr)
 
 
-def test_send_and_receive_script(server):
+def test_send_and_receive_script(server, callback):
     # use a bidirectional script
     # catch diagnostic output
     # catch server output
-
-    buf = []
-
-    def outfunc(message):
-        logging.info(message)
-        buf.append(message)
 
     script = "any 'level one' when 'level two' 'who' 'level three'"
 
     writer = Path('/tmp') / 'log_text'
     with writer.open('w') as ofp:
-        nc = NetChat(address='localhost', port=server.port, script=script, output_function=outfunc, log_file=ofp)
-        ret = nc.run()
+        nc = Session(('localhost', server.port), script=script, out=ofp, err=None)
+        ret = nc.run(callback.rx)
 
     p('running', server.running())
     p('elapsed', server.elapsed())
 
-    assert len(buf), 'diagnostic output should be present'
-    p('output', buf)
+    assert len(callback.buffer), 'diagnostic output should be present'
+    p('output', callback.buffer)
 
     reader = Path('/tmp') / 'log_text'
     log_text = reader.read_text()

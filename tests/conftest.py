@@ -88,3 +88,18 @@ def server():
     with Server() as s:
         yield s
     logging.info('session server teardown')
+
+
+class CallbackCatcher():
+
+    def __init__(self):
+        self.buffer = []
+
+    def rx(self, state, data):
+        logging.info(f"{str(state)} {repr(data)}")
+        self.buffer.append((state, data))
+
+
+@pytest.fixture()
+def callback():
+    return CallbackCatcher()
