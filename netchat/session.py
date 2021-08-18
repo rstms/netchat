@@ -21,9 +21,9 @@ class Session():
     :type: out: file-type, optional
     :param: err: stream for writing diagnostic and status messages, defaults to stderr
     :type: out: file-type, optional
-    :param: callback: function to be called on state-change events of type: function(netchat.status data)
-    :type: callback: function, optional
-    :param: spawn_type: type of subprocess used for TCP connection (SPAWN.inerternal, SPAWN.socat, SPAWN.nc)
+    :param: events: a list of status events for which diagnostics should be emitted
+    :type: events: netchat.status, optional
+    :param: spawn_type: type of subprocess used for TCP connection (spawn.internal, spawn.socat, spawn.nc)
     :type: spawn_type: netchat.spawn
 
     ..note:: ``script`` can be a ``Script`` or a string
@@ -37,7 +37,7 @@ class Session():
     """
 
     def __init__(
-        self, address, script, *, wait_timeout=None, out=sys.stdout, err=sys.stderr, spawn_type=spawn.internal
+        self, address, script, *, wait_timeout=None, out=sys.stdout, err=sys.stderr, events=[status.EXPECT,status.SEND], spawn_type=spawn.internal
     ):
         """constructor"""
 
@@ -53,6 +53,7 @@ class Session():
         self.wait_timeout = wait_timeout
         self.out = out
         self.err = err
+        self.events = events
 
         if spawn_type == spawn.socat:
             self.command = f'socat stdio tcp4-connect:{address}:{port}'
@@ -65,12 +66,12 @@ class Session():
 
     def run(self, callback=None):
         """connect to the server and iterate through the script, waiting for EXPECT and sending SEND
-          :param: callback: a function to be called on state change events
-          :type: callback: function(netchat.status data)
+          :param: callback: function to be called on state change events
+          :type: callback: callback_function(netchat.status, data)
           :return: EOF, TIMEOUT, or DONE 
           :rtype: netchat.state
         """
-        with Handler(self.command, self.wait_timeout, self.out, self.err, callback) as handler:
+        with Handler(self.command, self.wait_timeout, self.out, self.err, self.events, callback) as handler:
             for step in self.script:
                 try:
                     handler.expect(step.expect)
@@ -93,15 +94,18 @@ class Handler():
     :type: out: file-type
     :param: err: stream for writing diagnostic messages
     :type: out: file-type
+    :param: events: list of desired status change diagnostics
+    :type: events: status
     :param: callback: function to be called on state change events
     :type: callback: function
     """
 
-    def __init__(self, command, timeout, out, err, callback):
+    def __init__(self, command, timeout, out, err, events, callback):
         self.command = command
         self.timeout = timeout
         self.out = out
         self.err = err
+        self.events = events
         self.callback = callback
 
     def __enter__(self):
@@ -117,15 +121,19 @@ class Handler():
         return False
 
     def event(self, event, data=None):
-        if self.err:
-            self.err.write(f"{str(event)} {repr(data)}\n")
-        if self.callback:
-            self.callback(event, data)
+        if event in self.events:
+            if self.err:
+                if data:
+                    self.err.write(f"{str(event)} {repr(data)}\n")
+                else:
+                    self.err.write(f"{str(event)}\n")
+            if self.callback:
+                self.callback(event, data)
         return event
 
     def expect(self, data):
         if data:
-            self.event(status.EXPECTING, data)
+            self.event(status.EXPECT, data)
             ret = self.child.expect(data)
             self.event(status.FOUND, data)
         else:
@@ -133,7 +141,7 @@ class Handler():
 
     def send(self, data):
         if data:
-            self.event(status.SENDING, data)
+            self.event(status.SEND, data)
             self.child.sendline(data)
             self.event(status.SENT, data)
         else:
